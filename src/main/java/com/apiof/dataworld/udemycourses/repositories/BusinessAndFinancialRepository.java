@@ -1,8 +1,9 @@
 package com.apiof.dataworld.udemycourses.repositories;
 
 import com.apiof.dataworld.udemycourses.exceptions.BusinessAndFinancialCoursesException;
-import com.apiof.dataworld.udemycourses.models.entities.BusinessAndFinancialCourses;
+import com.apiof.dataworld.udemycourses.models.dtos.BusinessAndFinancialCoursesDto;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Repository;
 
@@ -11,6 +12,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -19,25 +21,28 @@ import static java.sql.DriverManager.getConnection;
 
 @Repository
 @AllArgsConstructor
-public class BusinessAndFinancialRepository implements UdemyCoursesRepository<BusinessAndFinancialCourses> {
+@Slf4j
+public class BusinessAndFinancialRepository {
     private final Environment env;
 
-    @Override
-    public List<BusinessAndFinancialCourses> findAll() {
-        final List<BusinessAndFinancialCourses> businessAndFinancialCoursesList = new ArrayList<>();
+    public List<BusinessAndFinancialCoursesDto> findAll() {
+        final List<BusinessAndFinancialCoursesDto> businessAndFinancialCoursesList = new ArrayList<>();
+        log.debug("Retrieving URL from environment");
         final String URL = env.getProperty("spring.datasource.businessandfinancial.url");
+        log.debug("Opening connection to data source with environment credentials");
         try (final Connection connection = getConnection(Optional.ofNullable(URL).orElseThrow(),
                 env.getProperty("spring.datasource.businessandfinancial.username"),
                 env.getProperty("spring.datasource.businessandfinancial.password"))) {
             final PreparedStatement statement = getPreparedStatement(connection);
-            parseResult(businessAndFinancialCoursesList, statement);
+            getResult(businessAndFinancialCoursesList, statement);
         } catch (SQLException e) {
-            throw new BusinessAndFinancialCoursesException("Error - Error while getting connection");
+            throw new BusinessAndFinancialCoursesException("Error - Error while getting business and financial data source connection");
         }
         return businessAndFinancialCoursesList;
     }
 
     private PreparedStatement getPreparedStatement(final Connection connection) {
+        log.debug("Init - Preparing statement to query");
         final String QUERY = "SELECT * FROM businessfinance";
         final PreparedStatement statement;
         try {
@@ -48,26 +53,40 @@ public class BusinessAndFinancialRepository implements UdemyCoursesRepository<Bu
         return statement;
     }
 
-    private void parseResult(List<BusinessAndFinancialCourses> businessAndFinancialCoursesList, PreparedStatement statement) {
+    private void getResult(final List<BusinessAndFinancialCoursesDto> businessAndFinancialCoursesList,
+                           final PreparedStatement statement) {
+        log.debug("Init - Executing query to get result");
         try (final ResultSet resultSet = statement.executeQuery()) {
             while (resultSet.next()) {
-                BusinessAndFinancialCourses businessAndFinancialCourses = new BusinessAndFinancialCourses();
-                businessAndFinancialCourses.setId(resultSet.getLong("id"));
-                businessAndFinancialCourses.setTitle(resultSet.getString("title"));
-                businessAndFinancialCourses.setUrl(resultSet.getString("url"));
-                businessAndFinancialCourses.setIsPaid(resultSet.getBoolean("ispaid"));
-                businessAndFinancialCourses.setPrice(resultSet.getString("price"));
-                businessAndFinancialCourses.setNumSubscribers(resultSet.getInt("numsubscribers"));
-                businessAndFinancialCourses.setNumReviews(resultSet.getInt("numreviews"));
-                businessAndFinancialCourses.setNumPublishedLectures(resultSet.getInt("numpublishedlectures"));
-                businessAndFinancialCourses.setInstructionalLevel(resultSet.getString("instructionallevel"));
-                businessAndFinancialCourses.setContentInfo(resultSet.getString("contentinfo"));
-                businessAndFinancialCourses.setPublishedTime(resultSet.getObject("publishedtime", OffsetDateTime.class));
-                businessAndFinancialCourses.setTotal(resultSet.getInt("total"));
-                businessAndFinancialCoursesList.add(businessAndFinancialCourses);
+                mapResult(businessAndFinancialCoursesList, resultSet);
             }
         } catch (SQLException e) {
             throw new BusinessAndFinancialCoursesException("Error - Error while parsing result set");
         }
     }
+
+    private void mapResult(final List<BusinessAndFinancialCoursesDto> businessAndFinancialCoursesList,
+                           final ResultSet resultSet) throws SQLException {
+        try {
+            final BusinessAndFinancialCoursesDto businessAndFinancialCourses = BusinessAndFinancialCoursesDto.builder()
+                    .id(resultSet.getLong("id"))
+                    .title(resultSet.getString("title"))
+                    .url(resultSet.getString("url"))
+                    .isPaid(resultSet.getBoolean("ispaid"))
+                    .price(resultSet.getString("price"))
+                    .numSubscribers(resultSet.getInt("numsubscribers"))
+                    .numReviews(resultSet.getInt("numreviews"))
+                    .numPublishedLectures(resultSet.getInt("numpublishedlectures"))
+                    .instructionalLevel(resultSet.getString("instructionallevel"))
+                    .contentInfo(resultSet.getString("contentinfo"))
+                    .publishedTime(OffsetDateTime.parse(resultSet.getString("publishedtime")))
+                    .total(resultSet.getInt("total"))
+                    .build();
+            businessAndFinancialCoursesList.add(businessAndFinancialCourses);
+        } catch (DateTimeParseException dateTimeParseException) {
+            log.warn(String.format("Warning - Error while parsing publishedTime field: \"%s\"",
+                    resultSet.getString("publishedtime")));
+        }
+    }
+
 }

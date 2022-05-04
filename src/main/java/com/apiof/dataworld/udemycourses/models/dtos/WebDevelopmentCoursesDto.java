@@ -7,7 +7,7 @@ import java.time.OffsetDateTime;
 
 @Data
 @Builder
-public class BusinessAndFinancialCoursesDto {
+public class WebDevelopmentCoursesDto {
     private Long id;
     private String title;
     private String url;
